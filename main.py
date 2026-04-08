@@ -1,25 +1,16 @@
-import requests
 import speech_recognition as sr
-import pyttsx3
-from datetime import datetime
+import requests
 
 MODEL_NAME = "llama3"
-CHAT_FILE = "chat_history.txt"
+
+recognizer = sr.Recognizer()
+mic = sr.Microphone()
 
 conversation_history = []
 
-recognizer = sr.Recognizer()
-tts = pyttsx3.init()
-
-
-def save_message(role, message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(CHAT_FILE, "a", encoding="utf-8") as file:
-        file.write(f"[{timestamp}] {role}: {message}\n")
-
 
 def build_prompt():
-    prompt = "You are a helpful and friendly AI chatbot.\n\n"
+    prompt = "You are a helpful AI assistant.\n\n"
     for role, message in conversation_history:
         prompt += f"{role}: {message}\n"
     prompt += "Bot:"
@@ -36,61 +27,52 @@ def chat_with_ai():
             "stream": False
         }
     )
-    response.raise_for_status()
     return response.json()["response"].strip()
 
 
-def listen_to_user():
-    with sr.Microphone() as source:
-        print("Listening...")
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-        audio = recognizer.listen(source)
+def record_audio():
+    print("\nPress ENTER to start recording...")
+    input()
+
+    print("🎤 Recording... Press ENTER to stop.")
+    with mic as source:
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source, phrase_time_limit=None)
+
+    input()  # wait for stop
+    print("Processing...")
 
     try:
         text = recognizer.recognize_google(audio)
         print("You:", text)
         return text
     except sr.UnknownValueError:
-        print("Sorry, I could not understand you.")
+        print("Could not understand audio.")
         return None
-    except sr.RequestError as error:
-        print("Speech recognition error:", error)
+    except sr.RequestError as e:
+        print("Speech recognition error:", e)
         return None
 
 
-def speak_text(text):
-    tts.say(text)
-    tts.runAndWait()
+print("Voice Chatbot (Press ENTER to record, Ctrl+C to exit)\n")
 
+while True:
+    user_input = record_audio()
 
-print("Voice AI Chatbot started.")
-print("Say something, or press Ctrl+C to stop.\n")
+    if not user_input:
+        continue
 
-try:
-    while True:
-        user_input = listen_to_user()
+    if user_input.lower() in ["quit", "exit", "stop"]:
+        print("Ending chat.")
+        break
 
-        if not user_input:
-            continue
+    conversation_history.append(("User", user_input))
 
-        if user_input.lower() in ["quit", "exit", "stop"]:
-            print("Chat ended.")
-            break
+    try:
+        bot_reply = chat_with_ai()
+        print("Bot:", bot_reply, "\n")
 
-        conversation_history.append(("User", user_input))
-        save_message("User", user_input)
+        conversation_history.append(("Bot", bot_reply))
 
-        try:
-            bot_reply = chat_with_ai()
-            print("Bot:", bot_reply, "\n")
-
-            conversation_history.append(("Bot", bot_reply))
-            save_message("Bot", bot_reply)
-
-            speak_text(bot_reply)
-
-        except requests.exceptions.RequestException as error:
-            print("Error connecting to Ollama:", error)
-
-except KeyboardInterrupt:
-    print("\nChat ended by user.")
+    except Exception as e:
+        print("Error:", e)
